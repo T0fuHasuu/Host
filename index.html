@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open Source Android MDM Implementation Strategy</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #FDFCF8; color: #334155; }
+        .card { background-color: white; border-radius: 0.75rem; box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06); transition: all 0.3s ease; }
+        .card:hover { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .btn-primary { background-color: #475569; color: white; transition: background-color 0.2s; }
+        .btn-primary:hover { background-color: #334155; }
+        .active-nav { border-bottom: 2px solid #475569; color: #1e293b; font-weight: 600; }
+        .chart-container { position: relative; width: 100%; max-width: 500px; margin: 0 auto; height: 300px; max-height: 400px; }
+        .device-frame { border: 8px solid #1e293b; border-radius: 1.5rem; overflow: hidden; position: relative; background: #e2e8f0; height: 400px; width: 240px; margin: 0 auto; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); }
+        .device-screen { height: 100%; width: 100%; background: white; padding: 1rem; overflow-y: auto; display: flex; flex-direction: column; }
+        .status-bar { height: 20px; width: 100%; background: #0f172a; color: white; font-size: 10px; display: flex; justify-content: space-between; align-items: center; padding: 0 8px; position: absolute; top: 0; left: 0; z-index: 10; }
+        .app-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; margin-bottom: 4px; }
+        .toggle-checkbox:checked { right: 0; border-color: #68D391; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #68D391; }
+    </style>
+    <!-- Chosen Palette: Warm Neutrals (Background), Slate (Primary UI), Soft Green (Success), Muted Red (Restriction) -->
+    <!-- Application Structure Plan: 
+         1. Header & Executive Summary: Immediate context setting for the implementation strategy.
+         2. System Architecture: Visualizing the "Windows 11 Console -> WiFi -> Android" flow using HTML grid (NO SVG).
+         3. Interactive Policy Simulator: The core interactive element. Users toggle specific requirements (PIN, DLP, Apps) and see immediate visual feedback on a "Virtual Device" and a "Security vs Usability" Radar Chart.
+         4. Enrollment Workflow: A step-by-step guide for the URL-based enrollment.
+         5. BYOD Analysis: Visualizing the Data Separation (Work vs Personal).
+         This structure translates the user's technical requirements into a visual plan. -->
+    <!-- Visualization & Content Choices:
+         - Radar Chart: To show the trade-off between "Security", "User Friction", and "Implementation Speed" based on selected policies.
+         - CSS Device Simulator: To visually demonstrate the "Work Profile" concept without static images.
+         - Step Process: To explain the WiFi/URL enrollment flow clearly.
+         - NO SVG/Mermaid: All diagrams built with Tailwind Grid/Flex and Unicode. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="antialiased selection:bg-gray-200">
+
+    <!-- Navigation -->
+    <nav class="sticky top-0 z-50 bg-white/90 backdrop-blur-sm border-b border-gray-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex items-center">
+                    <div class="flex-shrink-0 flex items-center gap-2">
+                        <span class="text-2xl">📱</span>
+                        <span class="font-bold text-xl tracking-tight text-slate-800">OpenMDM <span class="text-slate-500 font-light">Architect</span></span>
+                    </div>
+                    <div class="hidden sm:ml-8 sm:flex sm:space-x-8" id="nav-container">
+                        <button onclick="navigate('dashboard')" class="nav-btn active-nav px-1 pt-1 text-sm font-medium text-gray-900">Dashboard</button>
+                        <button onclick="navigate('architecture')" class="nav-btn px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-700">Architecture</button>
+                        <button onclick="navigate('simulation')" class="nav-btn px-1 pt-1 text-sm font-medium text-gray-500 hover:text-gray-700">Policy Sim</button>
+                    </div>
+                </div>
+                <div class="flex items-center">
+                    <span class="text-xs font-medium px-2 py-1 bg-green-100 text-green-700 rounded-full">Project Status: Planning</span>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+
+        <!-- SECTION 1: Dashboard / Executive Summary -->
+        <section id="dashboard" class="space-y-6">
+            <div class="text-center max-w-3xl mx-auto mb-10">
+                <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight sm:text-5xl mb-4">Android BYOD Implementation Strategy</h1>
+                <p class="text-lg text-slate-600">
+                    A minimal, open-source compliant roadmap for deploying Android Mobile Device Management hosted on Windows 11.
+                    Focusing on Data Loss Prevention (DLP) and Work Profile isolation.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- KPI 1 -->
+                <div class="card p-6 border-t-4 border-slate-500">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-slate-500 uppercase">Deployment Model</p>
+                            <h3 class="text-2xl font-bold text-slate-800 mt-1">On-Premise</h3>
+                            <p class="text-sm text-slate-600 mt-1">Windows 11 Console</p>
+                        </div>
+                        <span class="text-3xl">💻</span>
+                    </div>
+                </div>
+                 <!-- KPI 2 -->
+                 <div class="card p-6 border-t-4 border-slate-500">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-slate-500 uppercase">Enrollment Method</p>
+                            <h3 class="text-2xl font-bold text-slate-800 mt-1">Zero-Touch Lite</h3>
+                            <p class="text-sm text-slate-600 mt-1">WiFi Gated + URL</p>
+                        </div>
+                        <span class="text-3xl">🔗</span>
+                    </div>
+                </div>
+                 <!-- KPI 3 -->
+                 <div class="card p-6 border-t-4 border-slate-500">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-slate-500 uppercase">Security Profile</p>
+                            <h3 class="text-2xl font-bold text-slate-800 mt-1">Work Profile</h3>
+                            <p class="text-sm text-slate-600 mt-1">Containerized (BYOD)</p>
+                        </div>
+                        <span class="text-3xl">🛡️</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Intro Text -->
+            <div class="card p-8">
+                <h2 class="text-2xl font-bold text-slate-800 mb-4">Strategic Approach</h2>
+                <div class="prose max-w-none text-slate-600">
+                    <p class="mb-4">
+                        To meet the requirement of a <strong>minimal, free, and open-source</strong> solution running on Windows 11, the recommended strategy utilizes an <strong>Android Enterprise</strong> compliant open-source MDM server (e.g., Headwind MDM Community Edition or similar). This avoids cloud subscription costs while providing a robust dashboard.
+                    </p>
+                    <p>
+                        The "No Factory Reset" requirement dictates a <strong>Work Profile</strong> provisioning mode. This creates a secure sandbox on the employee's personal device. Corporate data (Apps, Clipboard, Files) is isolated within this sandbox, satisfying the Data Exfiltration requirement without infringing on personal user privacy.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 2: Architecture -->
+        <section id="architecture" class="space-y-6 hidden">
+            <div class="border-b border-gray-200 pb-4">
+                <h2 class="text-3xl font-bold text-slate-900">System Architecture</h2>
+                <p class="text-slate-500 mt-2">Visualizing the connection flow from your local console to the BYOD devices.</p>
+            </div>
+
+            <!-- Architectural Diagram (HTML/Grid) -->
+            <div class="card p-8 bg-slate-50">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-8 items-center relative">
+                    
+                    <!-- Node 1: Server -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center relative z-10">
+                        <div class="text-4xl mb-3">🖥️</div>
+                        <h3 class="font-bold text-slate-800">Windows 11 Console</h3>
+                        <p class="text-xs text-slate-500 mt-2">Local Host / Server</p>
+                        <div class="mt-4 text-left bg-slate-100 p-2 rounded text-xs font-mono">
+                            <div>> Service: MDM Core</div>
+                            <div>> Port: 8080/443</div>
+                            <div>> DB: PostgreSQL</div>
+                        </div>
+                    </div>
+
+                    <!-- Connection Visualization -->
+                    <div class="hidden md:flex flex-col items-center justify-center space-y-2">
+                        <div class="text-xs font-semibold text-slate-400 uppercase tracking-widest">Enrollment Network</div>
+                        <div class="w-full h-1 bg-slate-300 rounded relative">
+                            <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 text-xl">📶</div>
+                        </div>
+                        <div class="text-xs text-slate-500 text-center w-3/4">Devices must join specific WiFi to resolve local MDM URL</div>
+                    </div>
+
+                    <!-- Node 2: Device -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm text-center relative z-10">
+                        <div class="text-4xl mb-3">📱</div>
+                        <h3 class="font-bold text-slate-800">Android BYOD</h3>
+                        <p class="text-xs text-slate-500 mt-2">Target Device</p>
+                        <div class="mt-4 flex justify-center space-x-2">
+                            <span class="px-2 py-1 bg-slate-100 rounded text-xs">🔒 Personal</span>
+                            <span class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs border border-blue-200">💼 Work</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Workflow Steps -->
+                <div class="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="p-4 bg-white rounded border border-slate-100">
+                        <div class="font-bold text-blue-600 mb-1">Step 1</div>
+                        <div class="text-sm font-semibold">Connect WiFi</div>
+                        <div class="text-xs text-slate-500">Device joins "Corp-Enrollment" WiFi.</div>
+                    </div>
+                    <div class="p-4 bg-white rounded border border-slate-100">
+                        <div class="font-bold text-blue-600 mb-1">Step 2</div>
+                        <div class="text-sm font-semibold">Access URL</div>
+                        <div class="text-xs text-slate-500">User visits local MDM IP/URL via browser.</div>
+                    </div>
+                    <div class="p-4 bg-white rounded border border-slate-100">
+                        <div class="font-bold text-blue-600 mb-1">Step 3</div>
+                        <div class="text-sm font-semibold">Install Agent</div>
+                        <div class="text-xs text-slate-500">Download APK or Play Store MDM Agent.</div>
+                    </div>
+                    <div class="p-4 bg-white rounded border border-slate-100">
+                        <div class="font-bold text-blue-600 mb-1">Step 4</div>
+                        <div class="text-sm font-semibold">Profile Creation</div>
+                        <div class="text-xs text-slate-500">Work Profile inflates. Policies applied.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comparison Table -->
+            <div class="card p-6 overflow-hidden">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">Enrollment Mode Comparison</h3>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full text-sm text-left">
+                        <thead class="bg-slate-50 text-slate-500 font-medium">
+                            <tr>
+                                <th class="px-4 py-3">Feature</th>
+                                <th class="px-4 py-3 text-blue-700 bg-blue-50">Work Profile (Recommended)</th>
+                                <th class="px-4 py-3">Fully Managed (Device Owner)</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr>
+                                <td class="px-4 py-3 font-medium">Factory Reset Required</td>
+                                <td class="px-4 py-3 text-green-600">No (Minimal Friction)</td>
+                                <td class="px-4 py-3 text-red-600">Yes (Wipes Data)</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-3 font-medium">Privacy</td>
+                                <td class="px-4 py-3">User keeps personal apps/photos</td>
+                                <td class="px-4 py-3">Company sees everything</td>
+                            </tr>
+                            <tr>
+                                <td class="px-4 py-3 font-medium">DLP Control</td>
+                                <td class="px-4 py-3">High (Within Work Container)</td>
+                                <td class="px-4 py-3">Absolute (Whole Device)</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION 3: Policy Simulator -->
+        <section id="simulation" class="space-y-6 hidden">
+            <div class="border-b border-gray-200 pb-4">
+                <h2 class="text-3xl font-bold text-slate-900">Policy Impact Simulator</h2>
+                <p class="text-slate-500 mt-2">Configure your MDM policies below to see how they affect the device and security posture.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                
+                <!-- Controls Column -->
+                <div class="space-y-6">
+                    <div class="card p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-4">1. Access Control</h3>
+                        <div class="space-y-4">
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-700">Enforce 6-Digit PIN</span>
+                                <input type="checkbox" id="policy-pin" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500 transition duration-150 ease-in-out" checked onchange="updateSimulation()">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-700">Screen Timeout (2 min)</span>
+                                <input type="checkbox" id="policy-timeout" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500 transition duration-150 ease-in-out" checked onchange="updateSimulation()">
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="card p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-4">2. Data Protection (DLP)</h3>
+                        <div class="space-y-4">
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-700">Block Clipboard (Copy/Paste)</span>
+                                <input type="checkbox" id="policy-clipboard" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500 transition duration-150 ease-in-out" checked onchange="updateSimulation()">
+                            </label>
+                            <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-700">Block USB Data Transfer</span>
+                                <input type="checkbox" id="policy-usb" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500 transition duration-150 ease-in-out" checked onchange="updateSimulation()">
+                            </label>
+                             <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-700">Block Screen Capture</span>
+                                <input type="checkbox" id="policy-capture" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500 transition duration-150 ease-in-out" onchange="updateSimulation()">
+                            </label>
+                        </div>
+                    </div>
+
+                     <div class="card p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-4">3. Application Control</h3>
+                        <div class="space-y-4">
+                             <label class="flex items-center justify-between cursor-pointer">
+                                <span class="text-sm font-medium text-slate-700">Allowlist Only (Kiosk Mode)</span>
+                                <input type="checkbox" id="policy-kiosk" class="form-checkbox h-5 w-5 text-blue-600 rounded focus:ring-blue-500 transition duration-150 ease-in-out" onchange="updateSimulation()">
+                            </label>
+                            <div class="text-xs text-slate-400 mt-2 p-2 bg-slate-50 rounded">
+                                "Allowed App" policies restrict the Play Store in the Work Profile to approved apps only.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Visualizer Column (Phone) -->
+                <div class="lg:col-span-1 flex flex-col items-center justify-center">
+                    <h3 class="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4">Device Preview</h3>
+                    <div class="device-frame">
+                        <div class="status-bar">
+                            <span>10:30</span>
+                            <div class="flex gap-1">
+                                <span>📶</span>
+                                <span>🔋</span>
+                            </div>
+                        </div>
+                        <div class="device-screen pt-8">
+                            <!-- Lock Screen Overlay -->
+                            <div id="sim-lockscreen" class="hidden absolute inset-0 bg-slate-900/95 z-20 flex flex-col items-center justify-center text-white">
+                                <div class="text-3xl mb-4">🔒</div>
+                                <div class="text-sm font-bold mb-2">Device Locked</div>
+                                <div class="text-xs text-slate-400">Enter PIN to access Work Profile</div>
+                                <div class="flex gap-2 mt-4">
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                    <div class="w-2 h-2 rounded-full bg-white"></div>
+                                </div>
+                            </div>
+
+                            <!-- Home Screen -->
+                            <div class="mb-4">
+                                <div class="text-xs font-bold text-slate-400 uppercase mb-2 px-1">Personal Profile</div>
+                                <div class="grid grid-cols-4 gap-2">
+                                    <div class="flex flex-col items-center"><div class="app-icon bg-green-500 text-white">📞</div></div>
+                                    <div class="flex flex-col items-center"><div class="app-icon bg-blue-500 text-white">💬</div></div>
+                                    <div class="flex flex-col items-center"><div class="app-icon bg-red-500 text-white">📸</div></div>
+                                    <div class="flex flex-col items-center"><div class="app-icon bg-yellow-500 text-white">🎮</div></div>
+                                </div>
+                            </div>
+
+                            <div class="border-t-2 border-dashed border-blue-200 my-2"></div>
+
+                            <div class="flex-grow bg-blue-50/50 rounded-lg p-2 relative overflow-hidden transition-all duration-300" id="work-profile-container">
+                                <div class="flex justify-between items-center mb-2">
+                                    <div class="text-xs font-bold text-blue-800 uppercase flex items-center gap-1">
+                                        💼 Work Profile 
+                                        <span id="sim-dlp-badge" class="hidden text-[8px] bg-red-100 text-red-600 px-1 rounded border border-red-200">DLP ON</span>
+                                    </div>
+                                </div>
+                                
+                                <div class="grid grid-cols-4 gap-2" id="work-apps">
+                                    <!-- Dynamic Apps injected here -->
+                                </div>
+
+                                <!-- Notification Toast -->
+                                <div id="sim-toast" class="absolute bottom-2 left-2 right-2 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg opacity-0 transition-opacity text-center z-10">
+                                    Action Blocked
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                        <button onclick="simulateAction('copy')" class="text-xs bg-white border border-slate-200 px-3 py-1 rounded hover:bg-slate-50">Test: Copy Data</button>
+                        <button onclick="simulateAction('install')" class="text-xs bg-white border border-slate-200 px-3 py-1 rounded hover:bg-slate-50">Test: Install Game</button>
+                    </div>
+                </div>
+
+                <!-- Analysis Column -->
+                <div class="space-y-6">
+                    <div class="card p-6">
+                        <h3 class="text-lg font-bold text-slate-800 mb-2">Security vs Usability</h3>
+                        <p class="text-sm text-slate-500 mb-4">Real-time analysis of your configuration.</p>
+                        <div class="chart-container">
+                            <canvas id="radarChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card p-6 bg-slate-800 text-white">
+                        <h3 class="text-sm font-bold text-slate-300 uppercase mb-2">Console Output</h3>
+                        <div class="font-mono text-xs space-y-2 h-32 overflow-y-auto" id="console-log">
+                            <div class="text-green-400">> System Ready.</div>
+                            <div class="text-slate-400">> Awaiting Policy Update...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script>
+        // State Management
+        let currentSection = 'dashboard';
+        const state = {
+            pin: true,
+            timeout: true,
+            clipboard: true,
+            usb: true,
+            capture: false,
+            kiosk: false
+        };
+
+        // Charts
+        let radarChartInstance = null;
+
+        // Navigation Logic
+        function navigate(sectionId) {
+            // Update UI
+            document.querySelectorAll('section').forEach(el => el.classList.add('hidden'));
+            document.getElementById(sectionId).classList.remove('hidden');
+            
+            document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active-nav', 'text-gray-900'));
+            document.querySelectorAll('.nav-btn').forEach(el => {
+                if(el.getAttribute('onclick').includes(sectionId)) {
+                    el.classList.add('active-nav', 'text-gray-900');
+                    el.classList.remove('text-gray-500');
+                }
+            });
+
+            currentSection = sectionId;
+            
+            // Render chart if navigating to simulation for the first time or resize needed
+            if(sectionId === 'simulation') {
+                setTimeout(() => {
+                    initRadarChart();
+                    updateSimulation();
+                }, 100);
+            }
+        }
+
+        // Radar Chart Initialization
+        function initRadarChart() {
+            const ctx = document.getElementById('radarChart');
+            if (!ctx) return;
+            
+            // Destroy existing if needed to prevent duplicates
+            if (radarChartInstance) {
+                radarChartInstance.destroy();
+            }
+
+            radarChartInstance = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Data Security', 'User Privacy', 'Ease of Use', 'Compliance', 'Battery Impact'],
+                    datasets: [{
+                        label: 'Current Policy Score',
+                        data: [80, 90, 60, 85, 70],
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(59, 130, 246, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    elements: {
+                        line: { borderWidth: 3 }
+                    },
+                    scales: {
+                        r: {
+                            angleLines: { display: true },
+                            suggestedMin: 0,
+                            suggestedMax: 100
+                        }
+                    }
+                }
+            });
+        }
+
+        // Policy Simulation Logic
+        function updateSimulation() {
+            // 1. Get Values
+            state.pin = document.getElementById('policy-pin').checked;
+            state.timeout = document.getElementById('policy-timeout').checked;
+            state.clipboard = document.getElementById('policy-clipboard').checked;
+            state.usb = document.getElementById('policy-usb').checked;
+            state.capture = document.getElementById('policy-capture').checked;
+            state.kiosk = document.getElementById('policy-kiosk').checked;
+
+            // 2. Update Visual Device
+            renderDevice();
+
+            // 3. Update Chart Data
+            updateChartMetrics();
+
+            // 4. Console Log
+            logConsole(`Policy Update: DLP=${state.clipboard ? 'Strict' : 'Relaxed'}, PIN=${state.pin ? 'Enforced' : 'None'}`);
+        }
+
+        function renderDevice() {
+            const container = document.getElementById('work-apps');
+            const dlpBadge = document.getElementById('sim-dlp-badge');
+            const lockScreen = document.getElementById('sim-lockscreen');
+            const wpContainer = document.getElementById('work-profile-container');
+
+            // Handle Lock Screen Visual
+            if (state.pin) {
+               // In a real sim, we might show it briefly, but here we assume unlocked for demo
+               // unless specifically triggered.
+            }
+
+            // Handle DLP Badge
+            if (state.clipboard || state.usb || state.capture) {
+                dlpBadge.classList.remove('hidden');
+            } else {
+                dlpBadge.classList.add('hidden');
+            }
+
+            // Handle Kiosk Mode / Allowed Apps
+            container.innerHTML = '';
+            
+            // Standard Apps
+            const standardApps = [
+                { icon: '📧', bg: 'bg-blue-600', name: 'Mail' },
+                { icon: '📅', bg: 'bg-blue-600', name: 'Cal' },
+                { icon: '📁', bg: 'bg-yellow-600', name: 'Files' },
+                { icon: '🌐', bg: 'bg-blue-400', name: 'Intranet' }
+            ];
+
+            // If Kiosk is OFF, show Play Store. If ON, remove it.
+            if (!state.kiosk) {
+                standardApps.push({ icon: '🛍️', bg: 'bg-green-600', name: 'Store' });
+            }
+
+            // Render Apps
+            standardApps.forEach(app => {
+                const appHtml = `
+                    <div class="flex flex-col items-center group cursor-pointer hover:opacity-80">
+                        <div class="app-icon ${app.bg} text-white shadow-sm relative">
+                            ${app.icon}
+                            <div class="absolute bottom-0 right-0 w-3 h-3 bg-white rounded-full flex items-center justify-center border border-gray-100">
+                                <span class="text-[6px]">💼</span>
+                            </div>
+                        </div>
+                        <span class="text-[8px] text-slate-600 mt-1">${app.name}</span>
+                    </div>
+                `;
+                container.insertAdjacentHTML('beforeend', appHtml);
+            });
+            
+            // Kiosk visual style
+            if(state.kiosk) {
+                wpContainer.classList.add('bg-slate-200');
+                wpContainer.classList.remove('bg-blue-50/50');
+            } else {
+                wpContainer.classList.remove('bg-slate-200');
+                wpContainer.classList.add('bg-blue-50/50');
+            }
+        }
+
+        function updateChartMetrics() {
+            if (!radarChartInstance) return;
+
+            let security = 50;
+            let privacy = 90; // Work Profile is high privacy by default
+            let ease = 90;
+            let compliance = 50;
+            
+            if (state.pin) { security += 10; ease -= 10; compliance += 10; }
+            if (state.clipboard) { security += 20; ease -= 15; compliance += 20; }
+            if (state.usb) { security += 10; ease -= 5; compliance += 10; }
+            if (state.capture) { security += 10; ease -= 5; }
+            if (state.kiosk) { security += 15; ease -= 20; privacy += 5; } // Kiosk is restrictive
+
+            radarChartInstance.data.datasets[0].data = [security, privacy, ease, compliance, 75];
+            radarChartInstance.update();
+        }
+
+        function logConsole(msg) {
+            const consoleEl = document.getElementById('console-log');
+            const line = document.createElement('div');
+            line.className = "text-blue-300";
+            line.innerText = `> ${msg}`;
+            consoleEl.prepend(line);
+        }
+
+        function simulateAction(action) {
+            const toast = document.getElementById('sim-toast');
+            let allowed = true;
+            let msg = "Action Allowed";
+
+            if (action === 'copy') {
+                if (state.clipboard) {
+                    allowed = false;
+                    msg = "🚫 Paste Blocked by IT Admin";
+                } else {
+                    msg = "📋 Content Copied to Clipboard";
+                }
+            } else if (action === 'install') {
+                if (state.kiosk) {
+                    allowed = false;
+                    msg = "🚫 App Install Blocked (Allowlist Only)";
+                } else {
+                    msg = "⬇️ Downloading App...";
+                }
+            }
+
+            // Show Toast
+            toast.innerText = msg;
+            toast.className = `absolute bottom-2 left-2 right-2 text-[10px] p-2 rounded shadow-lg opacity-100 transition-opacity text-center z-10 ${allowed ? 'bg-green-600 text-white' : 'bg-red-600 text-white'}`;
+            
+            logConsole(`User attempted: ${action}. Result: ${allowed ? 'Success' : 'Blocked'}`);
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100');
+                toast.classList.add('opacity-0');
+            }, 2000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            // Start at dashboard
+            navigate('dashboard');
+        });
+
+    </script>
+</body>
+</html>
